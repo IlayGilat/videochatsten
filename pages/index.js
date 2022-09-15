@@ -1,14 +1,17 @@
-import xw from 'xwind'
-import ButtonReact from '../components/ButtonReact'
-import ButtonStyled from '../components/ButtonStyled'
-
-const Index = () => (
-  <div css={xw`grid justify-center items-center h-screen space-y-20`}>
-    <div css={xw`space-y-20`}>
-      <ButtonReact>@emotion/react</ButtonReact>
-      <ButtonStyled>@emotion/styled</ButtonStyled>
+import { useRouter } from "next/router";
+import { useState } from "react";
+export default function Home() {
+  const [roomID, setRoomID] = useState("");
+  const router = useRouter();
+  return (
+    <div>
+      <input
+        type="text"
+        value={roomID}
+        onChange={(e) => setRoomID(e.target.value)}
+        className="bg-transparent border"
+      />
+      <button onClick={() => router.push(`/room/${roomID}`)}>Submit</button>
     </div>
-  </div>
-)
-
-export default Index
+  );
+}
