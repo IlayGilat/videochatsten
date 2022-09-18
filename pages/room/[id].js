@@ -1,5 +1,5 @@
 import React from "react";
-import { useRouter } from "next/router";
+import Router, { useRouter } from "next/router";
 import Head from "next/head";
 import { useEffect, useState } from "react";
 import AgoraRTM from "agora-rtm-sdk";
@@ -176,7 +176,7 @@ const VideoChat = () => {
       <Head>
         <title>Room {id}</title>
       </Head>
-      <div className="text-2xl text-center pt-8">ROOM - {id}</div>
+      <div className="text-4xl text-center pt-8 font-bold">ROOM - {id}</div>
       <div className="p-8 flex justify-between items-center flex-col md:flex-row animate-fade-in">
         <video
           autoPlay
@@ -196,21 +196,21 @@ const VideoChat = () => {
           type="text"
           value={message}
           onChange={(e) => SetMessage(e.target.value)}
-          className="bg-transparent outline outline-1 outline-offset-4"
+          className="bg-transparent outline outline-1 rounded outline-offset-8"
         />
         <div className="p-4" />
         <button
           onClick={() => {
-            roomID ? alert(message) : alert("Need Room ID");
+            message ? alert(message) : alert("Needs Message");
           }}
-          className="outline outline-1 rounded outline-offset-4  cursor-pointer"
+          className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm w-full sm:w-auto px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
         >
           Submit
         </button>
       </div>
       <div className="p-8" />
       <h1 className="text-center font-bold text-4xl">
-        Last Message: {message ? message : "No Message"}
+        Last Gotten Message: {message ? message : "No Message"}
       </h1>
     </div>
   ) : (
