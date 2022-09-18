@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import Head from "next/head";
 import { useEffect, useState } from "react";
 import AgoraRTM from "agora-rtm-sdk";
+import { AGORA_ID } from "../../lib/base";
 const VideoChat = () => {
   const { query } = useRouter();
   const [id, setId] = useState();
@@ -11,8 +12,6 @@ const VideoChat = () => {
   let uid = String(Math.floor(Math.random() * 10000));
   const FRAME_RATE = 20;
   const token = null;
-  const APP_ID = "914f7af2b652488db4a7c6998460136a";
-
   let client;
   let channel;
 
@@ -32,12 +31,13 @@ const VideoChat = () => {
 
   useEffect(() => {
     setId(query.id);
-    init();
+    id ? init() : null;
   }, [query, id]);
 
   const init = async () => {
-    client = await AgoraRTM.createInstance(APP_ID);
+    client = await AgoraRTM.createInstance(AGORA_ID);
     await client.login({ uid, token });
+    console.log(id);
 
     channel = client.createChannel(id);
     await channel.join();
