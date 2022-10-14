@@ -8,7 +8,7 @@ const VideoChat = () => {
   const { query } = useRouter();
   const [id, setId] = useState();
   const [message, SetMessage] = useState("");
-
+  const [chat,setChat] = useState([["First Message",true], ["Second Message",false], ["Third Message",false] , ["4th Message",true]])
   let uid = String(Math.floor(Math.random() * 10000));
   const FRAME_RATE = 20;
   const token = null;
@@ -170,7 +170,7 @@ const VideoChat = () => {
       peerConnection.setRemoteDescription(answer);
     }
   };
-
+  
   return id ? (
     <div className="flex flex-col justify-between items-center relative">
       <Head>
@@ -180,13 +180,13 @@ const VideoChat = () => {
       <div className="p-8 flex justify-between items-center flex-col md:flex-row animate-fade-in">
         <video
           autoPlay
-          className="bg-black h-[300px] outline outline-offset-8 outline-1"
+          className="bg-black h-[300px] outline outline-offset-8 outline-1 rounded"
           id="user-1"
         ></video>
         <div className="p-4" />
         <video
           id="user-2"
-          className="bg-black h-[300px] outline outline-offset-8 outline-1"
+          className="bg-black h-[300px] outline outline-offset-8 outline-1 rounded"
           autoPlay
         ></video>
       </div>
@@ -201,7 +201,7 @@ const VideoChat = () => {
         <div className="p-4" />
         <button
           onClick={() => {
-            message ? alert(message) : alert("Needs Message");
+            setChat([...chat,[message,true]])
           }}
           className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm w-full sm:w-auto px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
         >
@@ -209,9 +209,12 @@ const VideoChat = () => {
         </button>
       </div>
       <div className="p-8" />
-      <h1 className="text-center font-bold text-4xl">
-        Last Gotten Message: {message ? message : "No Message"}
-      </h1>
+       {chat ? <h1 className="p-4 text-4xl font-semibold">Messages</h1>: <div></div>}
+       <div className="border p-2 max-w-screen-sm mx-10 grid grid-cols-1">
+       {chat ? 
+       chat.map((msg) => <div className={`border-1 border rounded-[100px] bg-gray-700 p-4 m-2 font-bold text-xl ${msg[1] ?"text-cyan-300	place-self-start": "text-green-400 place-self-end"}`} >{msg[0]}</div>)
+     : <div>No Messages</div> }
+      </div>
     </div>
   ) : (
     <div>loading</div>
