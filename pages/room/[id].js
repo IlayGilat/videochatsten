@@ -3,6 +3,10 @@ import Router, { useRouter } from "next/router";
 import Head from "next/head";
 import { useEffect, useState } from "react";
 import AgoraRTM from "agora-rtm-sdk";
+import {encode as encode_arr, insertflag, decode as decode_arr,next_signed,next,distance} from '../../lib/sten.js'
+import {generateRsaPair,exportCryptoKey,importCryptoKey,rsa_encrypt,rsa_decrypt} from '../../lib/rsa_handler.js'
+
+
 import { AGORA_ID } from "../../lib/base";
 const VideoChat = () => {
   const { query } = useRouter();
