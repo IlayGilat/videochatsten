@@ -1,8 +1,16 @@
-import React from "react";
+import React, { useRef } from "react";
 import Router, { useRouter } from "next/router";
 import Head from "next/head";
 import { useEffect, useState } from "react";
 import AgoraRTM from "agora-rtm-sdk";
+import {
+  sleep,
+  makeid,
+  str2frame,
+  sendFrame,
+  sendMessage,
+} from "../../lib/main_handler.js";
+
 import {
   encode as encode_arr,
   insertflag,
@@ -36,6 +44,31 @@ const VideoChat = () => {
   let client;
   let channel;
 
+  let remote_track;
+
+  //test
+
+  let current_hash_str = "";
+  let remote_hash_str = "";
+  let isRemotePublicKeyExists = false;
+  let remote_public_key;
+  let rsa_pair;
+  useRef(() => {
+    async function generate() {
+      return await generateRsaPair();
+    }
+    rsa_pair = generate();
+  }, []);
+  let receivingM = "";
+  let receivingStr = "";
+  let isReceivingFrame = false;
+  let ascii_buffer = 10000;
+  let m_text = "";
+  let temp_text = "";
+  let sender_obj;
+  const width = 300;
+  const height = 225;
+
   let localStream;
   let remoteStream;
   let peerConnection;
@@ -49,7 +82,8 @@ const VideoChat = () => {
       },
     ],
   };
-
+  let dataChannel;
+  let isDataChannelOpen = false;
   useEffect(() => {
     setId(query.id);
     id ? init() : null;
@@ -134,27 +168,27 @@ const VideoChat = () => {
         );
       }
     };
+    dataChannel = peerConnection.createDataChannel("sten");
+
+    dataChannel.onerror = (error) => {
+      console.log("Data Channel Error:", error);
+      isDataChannelOpen = false;
+    };
+
+    dataChannel.onmessage = (event) => {
+      onmessageHandler(event);
+    };
+    dataChannel.onopen = async () => {
+      dataChannel.send(await exportCryptoKey(rsa_pair.publicKey));
+      isDataChannelOpen = true;
+    };
+    dataChannel.onclose = () => {
+      console.log("The Data Channel is Closed");
+      isDataChannelOpen - false;
+    };
   };
 
   //create data channel (initiator)
-  dataChannel = peerConnection.createDataChannel("sten");
-
-  dataChannel.onerror = (error) => {
-    console.log("Data Channel Error:", error);
-    isDataChannelOpen = false;
-  };
-
-  dataChannel.onmessage = (event) => {
-    onmessageHandler(event);
-  };
-  dataChannel.onopen = async () => {
-    dataChannel.send(await exportCryptoKey(rsa_pair.publicKey));
-    isDataChannelOpen = true;
-  };
-  dataChannel.onclose = () => {
-    console.log("The Data Channel is Closed");
-    isDataChannelOpen - false;
-  };
 
   let createOffer = async (MemberId) => {
     await createPeerConnection(MemberId);
@@ -237,7 +271,6 @@ const VideoChat = () => {
 
         receivingM = "";
         break;
-
       default:
         //check remote public key
         if (
@@ -300,7 +333,6 @@ const VideoChat = () => {
     //.log("done here bro")
     document.getElementById("sendButton").disabled = false;
   };
-  document.getElementById("sendButton").onclick = sendSten;
   window.addEventListener("beforeunload", leaveChannel);
   return id ? (
     <div className="flex flex-col justify-between items-center relative">
@@ -333,6 +365,7 @@ const VideoChat = () => {
         <button
           onClick={() => {
             setChat([...chat, [message, true]]);
+            sendSten();
           }}
           className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm w-full sm:w-auto px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
         >
@@ -345,7 +378,7 @@ const VideoChat = () => {
       ) : (
         <div></div>
       )}
-      <div className="border p-2 max-w-screen-sm mx-10 grid grid-cols-1">
+      <div className="border p-2 w-[400px] mx-10 grid grid-cols-1">
         {chat ? (
           chat.map((msg) => (
             <div
