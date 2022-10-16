@@ -3,16 +3,33 @@ import Router, { useRouter } from "next/router";
 import Head from "next/head";
 import { useEffect, useState } from "react";
 import AgoraRTM from "agora-rtm-sdk";
-import {encode as encode_arr, insertflag, decode as decode_arr,next_signed,next,distance} from '../../lib/sten.js'
-import {generateRsaPair,exportCryptoKey,importCryptoKey,rsa_encrypt,rsa_decrypt} from '../../lib/rsa_handler.js'
-
+import {
+  encode as encode_arr,
+  insertflag,
+  decode as decode_arr,
+  next_signed,
+  next,
+  distance,
+} from "../../lib/sten.js";
+import {
+  generateRsaPair,
+  exportCryptoKey,
+  importCryptoKey,
+  rsa_encrypt,
+  rsa_decrypt,
+} from "../../lib/rsa_handler.js";
 
 import { AGORA_ID } from "../../lib/base";
 const VideoChat = () => {
   const { query } = useRouter();
   const [id, setId] = useState();
   const [message, SetMessage] = useState("");
-  const [chat,setChat] = useState([["First Message",true], ["Second Message",false], ["Third Message",false] , ["4th Message",true]])
+  const [chat, setChat] = useState([
+    ["First Message", true],
+    ["Second Message", false],
+    ["Third Message", false],
+    ["4th Message", true],
+  ]);
   let uid = String(Math.floor(Math.random() * 10000));
   const FRAME_RATE = 20;
   const token = null;
@@ -58,36 +75,10 @@ const VideoChat = () => {
     });
     console.log(localStream);
     document.getElementById("user-1").srcObject = localStream;
-    document.getElementById("user-2").srcObject = localStream;
   };
 
   let handleUserLeft = (MemberId) => {
     //Handle When User left
-  };
-
-  let grabFrame = () => {
-    let imageCap = new ImageCapture(remoteStream.getVideoTracks()[0]);
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
-
-    imageCap.grabFrame().then((imageBitmap) => {
-      console.log("Grabbed frame: ", imageBitmap);
-      canvas.width = imageBitmap.width;
-      canvas.height = imageBitmap.height;
-      context.drawImage(imageBitmap, 0, 0);
-      const data = context.getImageData(0, 0, 50, 50).data;
-      const rgbaArr = [];
-      for (let i = 0; i < data.length; i += 4) {
-        const rgba = {
-          r: data[i],
-          g: data[i + 1],
-          b: data[i + 2],
-          a: data[i + 3],
-        };
-        rgbaArr.push(rgba);
-      }
-      console.log(rgbaArr);
-    });
   };
 
   let handleMessageFromPeer = async (message, MemberId) => {
@@ -144,6 +135,27 @@ const VideoChat = () => {
       }
     };
   };
+
+  //create data channel (initiator)
+  dataChannel = peerConnection.createDataChannel("sten");
+
+  dataChannel.onerror = (error) => {
+    console.log("Data Channel Error:", error);
+    isDataChannelOpen = false;
+  };
+
+  dataChannel.onmessage = (event) => {
+    onmessageHandler(event);
+  };
+  dataChannel.onopen = async () => {
+    dataChannel.send(await exportCryptoKey(rsa_pair.publicKey));
+    isDataChannelOpen = true;
+  };
+  dataChannel.onclose = () => {
+    console.log("The Data Channel is Closed");
+    isDataChannelOpen - false;
+  };
+
   let createOffer = async (MemberId) => {
     await createPeerConnection(MemberId);
     let offer = await peerConnection.createOffer();
@@ -153,8 +165,24 @@ const VideoChat = () => {
       { text: JSON.stringify({ type: "offer", offer: offer }) },
       MemberId
     );
-  };
 
+    peerConnection.ondatachannel = async (event) => {
+      dataChannel = event.channel;
+      dataChannel.onmessage = (event) => {
+        onmessageHandler(event);
+      };
+      dataChannel.onclose = () => {
+        console.log("The Data Channel is Closed");
+        isDataChannelOpen = false;
+      };
+      dataChannel.onerror = (error) => {
+        console.log("Data Channel Error:", error);
+        isDataChannelOpen = false;
+      };
+      isDataChannelOpen = true;
+      dataChannel.send(await exportCryptoKey(rsa_pair.publicKey));
+    };
+  };
   let createAnswer = async (MemberId, offer) => {
     await createPeerConnection(MemberId);
 
@@ -174,7 +202,106 @@ const VideoChat = () => {
       peerConnection.setRemoteDescription(answer);
     }
   };
-  
+
+  let beforeFirstTime = true;
+  let onmessageHandler = async (event) => {
+    switch (event.data) {
+      case "start-frame":
+        isReceivingFrame = true;
+        break;
+      case "end-frame":
+        if (beforeFirstTime) {
+          document.getElementById("sten-remote").srcObject =
+            canvas3.captureStream();
+          beforeFirstTime = false;
+        }
+
+        isReceivingFrame = false;
+        let frameData = str2frame(receivingStr, width, height);
+        let arr = frameData.data;
+        let return_obj = decode_arr(arr, current_hash_str);
+        if (return_obj == "-1") {
+          console.log("return_obj error");
+          return -1;
+        }
+        remoteCtx.putImageData(frameData, 0, 0);
+        receivingM += return_obj.str;
+        receivingStr = "";
+        break;
+      case "end-message":
+        //console.log("final message:",receivingM)
+
+        ///here need to take the massage from recieveingM before its gone
+        let convoTextarea = document.getElementById("callTextarea");
+        convoTextarea.value += "RemoteSrc:\n" + receivingM + "\n";
+
+        receivingM = "";
+        break;
+
+      default:
+        //check remote public key
+        if (
+          /^(-----BEGIN PUBLIC KEY-----\n)/.test(event.data) &&
+          /(\n-----END PUBLIC KEY-----)$/.test(event.data)
+        ) {
+          remote_public_key = await importCryptoKey(event.data);
+          current_hash_str = makeid(16);
+          await dataChannel.send(
+            "---string---" +
+              (await rsa_encrypt(remote_public_key, current_hash_str))
+          );
+          isRemotePublicKeyExists = true;
+          break;
+        }
+        if (/^---string---/.test(event.data)) {
+          remote_hash_str = await rsa_decrypt(
+            rsa_pair.privateKey,
+            event.data.substring(12, event.data.length)
+          );
+          //console.log("remote_hash_str", remote_hash_str)
+        }
+
+        if (isReceivingFrame) {
+          receivingStr = receivingStr + event.data;
+        }
+        break;
+    }
+  };
+
+  let leaveChannel = async () => {
+    await channel.leave();
+    await channel.logout();
+  };
+  const canvas3 = document.createElement("canvas");
+  let remoteCtx = canvas3.getContext("2d");
+
+  let sendSten = async () => {
+    let text = document.getElementById("myTextarea").value;
+    if (text == "") {
+      return;
+    }
+
+    if (
+      !(isDataChannelOpen && isRemotePublicKeyExists && remote_hash_str != "")
+    ) {
+      return;
+    }
+
+    document.getElementById("myTextarea").value = "";
+    document.getElementById("sendButton").disabled = true;
+    await sendMessage(
+      text,
+      inputCtx,
+      width,
+      height,
+      dataChannel,
+      remote_hash_str
+    );
+    //.log("done here bro")
+    document.getElementById("sendButton").disabled = false;
+  };
+  document.getElementById("sendButton").onclick = sendSten;
+  window.addEventListener("beforeunload", leaveChannel);
   return id ? (
     <div className="flex flex-col justify-between items-center relative">
       <Head>
@@ -205,7 +332,7 @@ const VideoChat = () => {
         <div className="p-4" />
         <button
           onClick={() => {
-            setChat([...chat,[message,true]])
+            setChat([...chat, [message, true]]);
           }}
           className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm w-full sm:w-auto px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
         >
@@ -213,11 +340,28 @@ const VideoChat = () => {
         </button>
       </div>
       <div className="p-8" />
-       {chat ? <h1 className="p-4 text-4xl font-semibold">Messages</h1>: <div></div>}
-       <div className="border p-2 max-w-screen-sm mx-10 grid grid-cols-1">
-       {chat ? 
-       chat.map((msg) => <div className={`border-1 border rounded-[100px] bg-gray-700 p-4 m-2 font-bold text-xl ${msg[1] ?"text-cyan-300	place-self-start": "text-green-400 place-self-end"}`} >{msg[0]}</div>)
-     : <div>No Messages</div> }
+      {chat ? (
+        <h1 className="p-4 text-4xl font-semibold">Messages</h1>
+      ) : (
+        <div></div>
+      )}
+      <div className="border p-2 max-w-screen-sm mx-10 grid grid-cols-1">
+        {chat ? (
+          chat.map((msg) => (
+            <div
+              className={`border-1 border rounded-[100px] bg-gray-700 p-4 m-2 font-bold text-xl ${
+                msg[1]
+                  ? "text-cyan-300	place-self-start"
+                  : "text-green-400 place-self-end"
+              }`}
+              key={msg.at()}
+            >
+              {msg[0]}
+            </div>
+          ))
+        ) : (
+          <div>No Messages</div>
+        )}
       </div>
     </div>
   ) : (
