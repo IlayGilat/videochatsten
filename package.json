@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "agora-rtm-sdk": "^1.6.0-201",
+    "crypto-js": "^4.1.1",
     "dotenv": "^16.0.2",
     "lodash": "^4.17.21",
     "next": "12.3.0",

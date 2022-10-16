@@ -28,10 +28,11 @@ import {
 } from "../../lib/rsa_handler.js";
 
 import { AGORA_ID } from "../../lib/base";
+const rsa_pair = await generateRsaPair();
 const VideoChat = () => {
   const { query } = useRouter();
   const [id, setId] = useState();
-  const [message, SetMessage] = useState("");
+  const [chatMessage, SetChatMessage] = useState("");
   const [chat, setChat] = useState([
     ["First Message", true],
     ["Second Message", false],
@@ -52,13 +53,6 @@ const VideoChat = () => {
   let remote_hash_str = "";
   let isRemotePublicKeyExists = false;
   let remote_public_key;
-  let rsa_pair;
-  useRef(() => {
-    async function generate() {
-      return await generateRsaPair();
-    }
-    rsa_pair = generate();
-  }, []);
   let receivingM = "";
   let receivingStr = "";
   let isReceivingFrame = false;
@@ -68,9 +62,13 @@ const VideoChat = () => {
   let sender_obj;
   const width = 300;
   const height = 225;
-
+  const canvas1 = document.createElement("canvas");
+  const canvas2 = document.createElement("canvas");
+  let inputCtx = canvas1.getContext("2d");
+  let outputCtx = canvas2.getContext("2d");
   let localStream;
   let remoteStream;
+  let stenStream;
   let peerConnection;
   const servers = {
     iceServers: [
@@ -107,8 +105,9 @@ const VideoChat = () => {
       },
       audio: false,
     });
-    console.log(localStream);
+
     document.getElementById("user-1").srcObject = localStream;
+    stenStream = localStream; //canvas2.captureStream();
   };
 
   let handleUserLeft = (MemberId) => {
@@ -148,7 +147,9 @@ const VideoChat = () => {
 
       document.getElementById("user-1").srcObject = localStream;
     }
-
+    stenStream.getTracks().forEach((track) => {
+      peerConnection.addTrack(track, stenStream);
+    });
     peerConnection.ontrack = (event) => {
       event.streams[0].getTracks().forEach((track) => {
         remoteStream.addTrack(track);
@@ -179,6 +180,7 @@ const VideoChat = () => {
       onmessageHandler(event);
     };
     dataChannel.onopen = async () => {
+      console.log("rsa_pair: ", rsa_pair.publicKey);
       dataChannel.send(await exportCryptoKey(rsa_pair.publicKey));
       isDataChannelOpen = true;
     };
@@ -239,6 +241,7 @@ const VideoChat = () => {
 
   let beforeFirstTime = true;
   let onmessageHandler = async (event) => {
+    console.log("im getting a message");
     switch (event.data) {
       case "start-frame":
         isReceivingFrame = true;
@@ -268,7 +271,7 @@ const VideoChat = () => {
         ///here need to take the massage from recieveingM before its gone
         let convoTextarea = document.getElementById("callTextarea");
         convoTextarea.value += "RemoteSrc:\n" + receivingM + "\n";
-
+        setChat([...chat, [receivingM, false]]);
         receivingM = "";
         break;
       default:
@@ -309,21 +312,17 @@ const VideoChat = () => {
   let remoteCtx = canvas3.getContext("2d");
 
   let sendSten = async () => {
-    let text = document.getElementById("myTextarea").value;
-    if (text == "") {
-      return;
-    }
-
+    console.log("im in send stens");
     if (
       !(isDataChannelOpen && isRemotePublicKeyExists && remote_hash_str != "")
     ) {
       return;
     }
 
-    document.getElementById("myTextarea").value = "";
+    SetChatMessage("");
     document.getElementById("sendButton").disabled = true;
     await sendMessage(
-      text,
+      chatMessage,
       inputCtx,
       width,
       height,
@@ -357,17 +356,18 @@ const VideoChat = () => {
       <div className=" flex my-auto justify-center items-center">
         <input
           type="text"
-          value={message}
-          onChange={(e) => SetMessage(e.target.value)}
+          value={chatMessage}
+          onChange={(e) => SetChatMessage(e.target.value)}
           className="bg-transparent outline outline-1 rounded outline-offset-8"
         />
         <div className="p-4" />
         <button
-          onClick={() => {
-            setChat([...chat, [message, true]]);
-            sendSten();
+          onClick={async () => {
+            setChat([...chat, [chatMessage, true]]);
+            await sendSten();
           }}
           className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm w-full sm:w-auto px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+          id="sendButton"
         >
           Submit
         </button>
@@ -396,6 +396,7 @@ const VideoChat = () => {
           <div>No Messages</div>
         )}
       </div>
+      <video id="sten-remote" className="invisible"></video>
     </div>
   ) : (
     <div>loading</div>
