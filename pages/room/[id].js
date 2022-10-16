@@ -3,13 +3,6 @@ import Router, { useRouter } from "next/router";
 import Head from "next/head";
 import { useEffect, useState } from "react";
 import AgoraRTM from "agora-rtm-sdk";
-import {
-  sleep,
-  makeid,
-  str2frame,
-  sendFrame,
-  sendMessage,
-} from "../../lib/main_handler.js";
 
 import {
   encode as encode_arr,
@@ -29,6 +22,42 @@ import {
 
 import { AGORA_ID } from "../../lib/base";
 const rsa_pair = await generateRsaPair();
+console.log(`rsa_pair ${rsa_pair}`);
+let uid = String(Math.floor(Math.random() * 10000));
+const token = null;
+let client;
+let channel;
+
+let remote_track;
+
+//test
+
+let current_hash_str = "";
+let remote_hash_str = "";
+let isRemotePublicKeyExists = false;
+let remote_public_key;
+let receivingM = "";
+let receivingStr = "";
+let isReceivingFrame = false;
+
+const width = 300;
+const height = 225;
+const canvas1 = document.createElement("canvas");
+const canvas2 = document.createElement("canvas");
+let inputCtx = canvas1.getContext("2d");
+let localStream;
+let remoteStream;
+let stenStream;
+let peerConnection;
+const servers = {
+  iceServers: [
+    {
+      urls: ["stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"],
+    },
+  ],
+};
+let dataChannel;
+let isDataChannelOpen = false;
 const VideoChat = () => {
   const { query } = useRouter();
   const [id, setId] = useState();
@@ -39,58 +68,13 @@ const VideoChat = () => {
     ["Third Message", false],
     ["4th Message", true],
   ]);
-  let uid = String(Math.floor(Math.random() * 10000));
-  const FRAME_RATE = 20;
-  const token = null;
-  let client;
-  let channel;
-
-  let remote_track;
-
-  //test
-
-  let current_hash_str = "";
-  let remote_hash_str = "";
-  let isRemotePublicKeyExists = false;
-  let remote_public_key;
-  let receivingM = "";
-  let receivingStr = "";
-  let isReceivingFrame = false;
-  let ascii_buffer = 10000;
-  let m_text = "";
-  let temp_text = "";
-  let sender_obj;
-  const width = 300;
-  const height = 225;
-  const canvas1 = document.createElement("canvas");
-  const canvas2 = document.createElement("canvas");
-  let inputCtx = canvas1.getContext("2d");
-  let outputCtx = canvas2.getContext("2d");
-  let localStream;
-  let remoteStream;
-  let stenStream;
-  let peerConnection;
-  const servers = {
-    iceServers: [
-      {
-        urls: [
-          "stun:stun1.l.google.com:19302",
-          "stun:stun2.l.google.com:19302",
-        ],
-      },
-    ],
-  };
-  let dataChannel;
-  let isDataChannelOpen = false;
   useEffect(() => {
     setId(query.id);
     id ? init() : null;
   }, [query, id]);
-
-  const init = async () => {
+  let init = async () => {
     client = await AgoraRTM.createInstance(AGORA_ID);
     await client.login({ uid, token });
-    console.log(id);
 
     channel = client.createChannel(id);
     await channel.join();
@@ -107,13 +91,39 @@ const VideoChat = () => {
     });
 
     document.getElementById("user-1").srcObject = localStream;
+    document.getElementById("user-1").onclick = grabFrame;
+
+    /*document.getElementById("edited-stream").srcObject = canvas2.captureStream();*/
     stenStream = localStream; //canvas2.captureStream();
   };
 
   let handleUserLeft = (MemberId) => {
     //Handle When User left
   };
+  let grabFrame = () => {
+    let imageCap = new ImageCapture(remoteStream.getVideoTracks()[0]);
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
 
+    imageCap.grabFrame().then((imageBitmap) => {
+      console.log("Grabbed frame: ", imageBitmap);
+      canvas.width = imageBitmap.width;
+      canvas.height = imageBitmap.height;
+      context.drawImage(imageBitmap, 0, 0);
+      const data = context.getImageData(0, 0, 50, 50).data;
+      const rgbaArr = [];
+      for (let i = 0; i < data.length; i += 4) {
+        const rgba = {
+          r: data[i],
+          g: data[i + 1],
+          b: data[i + 2],
+          a: data[i + 3],
+        };
+        rgbaArr.push(rgba);
+      }
+      console.log(rgbaArr);
+    });
+  };
   let handleMessageFromPeer = async (message, MemberId) => {
     message = JSON.parse(message.text);
     if (message.type === "offer") {
@@ -128,11 +138,11 @@ const VideoChat = () => {
       }
     }
   };
-
   let handleUserJoined = async (MemberId) => {
     console.log("A new user joined the channel: ", MemberId);
     createOffer(MemberId);
   };
+
   let createPeerConnection = async (MemberId) => {
     peerConnection = new RTCPeerConnection(servers);
 
@@ -147,13 +157,16 @@ const VideoChat = () => {
 
       document.getElementById("user-1").srcObject = localStream;
     }
+
     stenStream.getTracks().forEach((track) => {
       peerConnection.addTrack(track, stenStream);
     });
+
     peerConnection.ontrack = (event) => {
       event.streams[0].getTracks().forEach((track) => {
         remoteStream.addTrack(track);
       });
+      remote_track = true;
     };
 
     peerConnection.onicecandidate = async (event) => {
@@ -169,6 +182,14 @@ const VideoChat = () => {
         );
       }
     };
+
+    /*
+    setInterval(() => {
+      grabFrame();
+    }, 50);
+    */
+
+    //create data channel (initiator)
     dataChannel = peerConnection.createDataChannel("sten");
 
     dataChannel.onerror = (error) => {
@@ -180,7 +201,7 @@ const VideoChat = () => {
       onmessageHandler(event);
     };
     dataChannel.onopen = async () => {
-      console.log("rsa_pair: ", rsa_pair.publicKey);
+      console.log("dataChannel Open");
       dataChannel.send(await exportCryptoKey(rsa_pair.publicKey));
       isDataChannelOpen = true;
     };
@@ -190,21 +211,19 @@ const VideoChat = () => {
     };
   };
 
-  //create data channel (initiator)
-
   let createOffer = async (MemberId) => {
     await createPeerConnection(MemberId);
     let offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
-
     client.sendMessageToPeer(
       { text: JSON.stringify({ type: "offer", offer: offer }) },
       MemberId
     );
-
+    //second user (reciever)
     peerConnection.ondatachannel = async (event) => {
       dataChannel = event.channel;
       dataChannel.onmessage = (event) => {
+        console.log("im inside dataChannel.onmessage");
         onmessageHandler(event);
       };
       dataChannel.onclose = () => {
@@ -219,6 +238,7 @@ const VideoChat = () => {
       dataChannel.send(await exportCryptoKey(rsa_pair.publicKey));
     };
   };
+
   let createAnswer = async (MemberId, offer) => {
     await createPeerConnection(MemberId);
 
@@ -241,7 +261,6 @@ const VideoChat = () => {
 
   let beforeFirstTime = true;
   let onmessageHandler = async (event) => {
-    console.log("im getting a message");
     switch (event.data) {
       case "start-frame":
         isReceivingFrame = true;
@@ -271,9 +290,10 @@ const VideoChat = () => {
         ///here need to take the massage from recieveingM before its gone
         let convoTextarea = document.getElementById("callTextarea");
         convoTextarea.value += "RemoteSrc:\n" + receivingM + "\n";
-        setChat([...chat, [receivingM, false]]);
+
         receivingM = "";
         break;
+
       default:
         //check remote public key
         if (
@@ -304,34 +324,73 @@ const VideoChat = () => {
     }
   };
 
+  //let isSent = false;
+
   let leaveChannel = async () => {
     await channel.leave();
     await channel.logout();
   };
+
   const canvas3 = document.createElement("canvas");
   let remoteCtx = canvas3.getContext("2d");
 
+  //this is the sender, gets text and send the text via embedded frames to the user
+  let sendMessage = async (text) => {
+    let index = 0;
+    let encode_res;
+    let temp_text = text;
+    let first_time = true;
+    let id = 0;
+    let part = 0;
+    do {
+      await sleep(60);
+      inputCtx.drawImage(
+        document.getElementById("user-1"),
+        0,
+        0,
+        width,
+        height
+      );
+      let pixelData = inputCtx.getImageData(0, 0, width, height);
+      let arr = pixelData.data;
+      encode_res = encode_arr(arr, temp_text, id, part, remote_hash_str);
+      if (encode_res == -1) {
+        continue;
+      }
+      index++;
+      temp_text = encode_res.str;
+      part++;
+      id = encode_res.id;
+      await sendFrame(arr, dataChannel);
+    } while (temp_text != "");
+
+    await dataChannel.send("end-message");
+    let convoTextarea = document.getElementById("callTextarea");
+
+    //writes the user part
+    convoTextarea.value += "me:\n" + text + "\n";
+  };
+
   let sendSten = async () => {
-    console.log("im in send stens");
+    console.log(`in send sten with message ${chatMessage}`);
+    if (chatMessage == "") {
+      return;
+    }
+
     if (
       !(isDataChannelOpen && isRemotePublicKeyExists && remote_hash_str != "")
     ) {
+      console.log(
+        `${isDataChannelOpen} ${isRemotePublicKeyExists} ${remote_hash_str}`
+      );
       return;
     }
 
     SetChatMessage("");
-    document.getElementById("sendButton").disabled = true;
-    await sendMessage(
-      chatMessage,
-      inputCtx,
-      width,
-      height,
-      dataChannel,
-      remote_hash_str
-    );
+    await sendMessage(chatMessage);
     //.log("done here bro")
-    document.getElementById("sendButton").disabled = false;
   };
+
   window.addEventListener("beforeunload", leaveChannel);
   return id ? (
     <div className="flex flex-col justify-between items-center relative">
@@ -363,7 +422,7 @@ const VideoChat = () => {
         <div className="p-4" />
         <button
           onClick={async () => {
-            setChat([...chat, [chatMessage, true]]);
+            // setChat([...chat, [chatMessage, true]]);
             await sendSten();
           }}
           className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm w-full sm:w-auto px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
